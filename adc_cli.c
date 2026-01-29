@@ -102,24 +102,34 @@ void adc_read(void* pvParameters) {
 void calc_avg(void* pvParameters) {
     float sum = 0;
     int idx;
+    uint8_t local_head;
     // wait for semaphore to unlock
     while (1) {
         xSemaphoreTake(avg_sem, portMAX_DELAY);
+        sum = 0;
+        
+        
+        // lock reads of buffer
+        portENTER_CRITICAL(&spinlock);
 
-        // the lowest possible head index is 0
+        // the lowest possible head index is 0, example:
         // (0 - 0 - 1) + 20 % 20 = 19
         // (0 - 1 - 1) + 20 % 20 = 18
         // ...
         // (0 - 8 - 1) + 20 % 20 = 11
         // (0 - 9 - 1) + 20 % 20 = 10
+
+        local_head = head;
         for (int i=0;i<10;i++) {
-            idx = ((head - 1 - i) + buffer_size) % buffer_size;
+            idx = ((local_head - 1 - i) + buffer_size) % buffer_size;
             sum += adc_buffer[idx];
         }
-        portENTER_CRITICAL(&spinlock);
-        adc_avg = sum / 10.0;
         portEXIT_CRITICAL(&spinlock);
-        sum = 0;
+
+        // it is okay to assign this outside of critical section because float write is atomic, 
+        adc_avg = sum / 10.0;
+
+
         // ESP_LOGI("ADC AVG", "Average ADC Value: %.2f\n", adc_avg);
         vTaskDelay(pdMS_TO_TICKS(500));
     }
